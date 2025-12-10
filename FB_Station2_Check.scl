@@ -1,6 +1,6 @@
 FUNCTION_BLOCK "FB_Station2_Check"
 { S7_Optimized_Access := 'TRUE' }
-VERSION: 0.1
+VERSION: 0.2
    VAR_INPUT
       bBtnGreen: BOOL;
       i_Clock_1Hz: BOOL;
@@ -17,7 +17,7 @@ VERSION: 0.1
 
    VAR_IN_OUT
       Data_Stn2: "typeCarriageData";
-      DB_Master: ARRAY[0..999] OF "typeArticleDefinition";
+      DB_Master: ARRAY[0..999] OF "typeProgrDefinition"; // Renamed from typeArticleDefinition
    END_VAR
 
    VAR
@@ -47,7 +47,7 @@ BEGIN
                #sStateDesc := 'IDLE_WAIT_DATA';
            END_IF;
 
-       10: // Search for Article number in DB
+       10: // Search for Progr number in DB (Renamed from Article)
            #bFound := FALSE;
            #tempIndex := 0;
            
@@ -69,7 +69,7 @@ BEGIN
            END_FOR;
 
            IF #bFound THEN
-               #Data_Stn2.bIsNewArticle := FALSE;
+               #Data_Stn2.bIsNewProgr := FALSE; // Renamed from bIsNewArticle
                #nState := 30; // Done
                #sStateDesc := 'SEARCH_FOUND';
            ELSE
@@ -84,7 +84,7 @@ BEGIN
 
            IF #bBtnGreen THEN
                // Teach In Confirmed
-               #Data_Stn2.bIsNewArticle := TRUE;
+               #Data_Stn2.bIsNewProgr := TRUE; // Renamed from bIsNewArticle
                #nState := 30;
                #sStateDesc := 'TEACH_IN_CONFIRMED';
            END_IF;

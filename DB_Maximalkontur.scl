@@ -2,7 +2,7 @@ DATA_BLOCK "MaximalkonturDB"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
    VAR
-      Progr : Array[0..999] of "typeArticleDefinition";
+      Progr : Array[0..999] of "typeProgrDefinition";
       nUsed : Int;
    END_VAR
 BEGIN

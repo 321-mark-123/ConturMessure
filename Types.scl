@@ -1,12 +1,12 @@
-TYPE "typeArticleDefinition"
+TYPE "typeProgrDefinition"
 VERSION : 0.1
    STRUCT
-      nProgrNumber : DINT;   // 0 = free/unused; 9999 = wrong article
+      nProgrNumber : DINT;   // 0 = free/unused; 9999 = wrong progr
       nXbreiteRechts : DINT;
       nXbreitelinks : DINT;
       nYlaenge : DINT;
-      nTolX : DINT;            // optionale Toleranz X für diesen Artikel (abs)
-      nTolY : DINT;            // optionale Toleranz Y für diesen Artikel (abs)
+      nTolX : DINT;            // optionale Toleranz X fǬr diesen Artikel (abs)
+      nTolY : DINT;            // optionale Toleranz Y fǬr diesen Artikel (abs)
       nRelTolX : DINT;         // optionale relative Toleranz X in Prozent (0=unused)
       nRelTolY : DINT;         // optionale relative Toleranz Y in Prozent (0=unused)
    END_STRUCT;
@@ -16,15 +16,15 @@ TYPE "typeCarriageData"
 VERSION : 0.1
    STRUCT
       nLaufWgNrNumber : DINT; 
-      nProgrNumber : DINT; // 0 = free/unused; 9999 = wrong article
+      nProgrNumber : DINT; // 0 = free/unused; 9999 = wrong progr
       nXbreiteRechts : DINT;
       nXbreitelinks : DINT;
       nYlaenge       : DINT;
-      nTolX          : DINT; // optionale Toleranz X für diesen Artikel (abs)
-      nTolY          : DINT; // optionale Toleranz Y für diesen Artikel (abs)
+      nTolX          : DINT; // optionale Toleranz X fǬr diesen Artikel (abs)
+      nTolY          : DINT; // optionale Toleranz Y fǬr diesen Artikel (abs)
       nRelTolX       : DINT; // optionale relative Toleranz X in Prozent (0=unused)
       nRelTolY       : DINT; // optionale relative Toleranz Y in Prozent (0=unused)
-      bIsNewArticle  : BOOL;
+      bIsNewProgr    : BOOL; // Renamed from bIsNewArticle
       bDataValid     : BOOL;
       nActXbreiteRechts : DINT;
       nActXbreitelinks : DINT;

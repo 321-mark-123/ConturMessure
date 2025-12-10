@@ -4,7 +4,7 @@ FUNCTION_BLOCK "FB_ChainControl"
 // Please use "FB_MainChain" instead. This block is for reference only.
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 { S7_Optimized_Access := 'TRUE' }
-VERSION: 0.1
+VERSION: 0.2
    VAR_INPUT
       bBtnGreen: BOOL;
       bBtnRed: BOOL;
@@ -67,26 +67,26 @@ BEGIN
    // Step 4: Arrival St2
    IF #trig_St2_Arr.Q THEN
        "KetteLaufwagenDB".Station2 := "KetteLaufwagenDB".Station1;
-       "KetteLaufwagenDB".Station1.nArticleNumber := 0; // Clear Prev
+       "KetteLaufwagenDB".Station1.nProgrNumber := 0; // Clear Prev
        #step_St2 := 0;
    END_IF;
 
    CASE #step_St2 OF
        0: // Idle / Analysis
-          IF "KetteLaufwagenDB".Station2.nArticleNumber > 0 THEN
-               // Check DB for Article
+          IF "KetteLaufwagenDB".Station2.nProgrNumber > 0 THEN
+               // Check DB for Progr
                #bFound := FALSE;
                FOR #tempIndex := 0 TO 999 DO
-                   IF "MaximalkonturDB".Articles[#tempIndex].nArticleNumber = "KetteLaufwagenDB".Station2.nArticleNumber THEN
+                   IF "MaximalkonturDB".Progr[#tempIndex].nProgrNumber = "KetteLaufwagenDB".Station2.nProgrNumber THEN
                        #bFound := TRUE;
                        // Load Nominal Data (Optional: copy nom data to carriage for comparison later?)
                        // For now we just verify existence.
                        // Also load tolerances if we want them locally
-                       "KetteLaufwagenDB".Station2.nXbreiteRechts := "MaximalkonturDB".Articles[#tempIndex].nXbreiteRechts;
-                       "KetteLaufwagenDB".Station2.nXbreitelinks := "MaximalkonturDB".Articles[#tempIndex].nXbreitelinks;
-                       "KetteLaufwagenDB".Station2.nYlaenge := "MaximalkonturDB".Articles[#tempIndex].nYlaenge;
-                       "KetteLaufwagenDB".Station2.nTolX := "MaximalkonturDB".Articles[#tempIndex].nTolX;
-                       "KetteLaufwagenDB".Station2.nTolY := "MaximalkonturDB".Articles[#tempIndex].nTolY;
+                       "KetteLaufwagenDB".Station2.nXbreiteRechts := "MaximalkonturDB".Progr[#tempIndex].nXbreiteRechts;
+                       "KetteLaufwagenDB".Station2.nXbreitelinks := "MaximalkonturDB".Progr[#tempIndex].nXbreitelinks;
+                       "KetteLaufwagenDB".Station2.nYlaenge := "MaximalkonturDB".Progr[#tempIndex].nYlaenge;
+                       "KetteLaufwagenDB".Station2.nTolX := "MaximalkonturDB".Progr[#tempIndex].nTolX;
+                       "KetteLaufwagenDB".Station2.nTolY := "MaximalkonturDB".Progr[#tempIndex].nTolY;
                        
                        EXIT; 
                    END_IF;
@@ -106,7 +106,7 @@ BEGIN
        20: // 4.2 Not Found - Operator Action
            // Set lights handled in Output Signal Section
            IF #trig_BtnGreen.Q THEN // 4.2.1 Operator confirms
-               "KetteLaufwagenDB".Station2.bIsNewArticle := TRUE;
+               "KetteLaufwagenDB".Station2.bIsNewProgr := TRUE;
                #step_St2 := 10; // Continue
            END_IF;
    END_CASE;
@@ -117,15 +117,15 @@ BEGIN
    // Step 5: Arrival St3
    IF #trig_St3_Arr.Q THEN
        "KetteLaufwagenDB".Station3 := "KetteLaufwagenDB".Station2;
-       "KetteLaufwagenDB".Station2.nArticleNumber := 0;
-       "KetteLaufwagenDB".Station2.bIsNewArticle := FALSE;
+       "KetteLaufwagenDB".Station2.nProgrNumber := 0;
+       "KetteLaufwagenDB".Station2.bIsNewProgr := FALSE;
        #step_St3 := 0;
    END_IF;
    
    // Step 6: Measurement Logic
    CASE #step_St3 OF
        0: // Wait for Measurement Start Trigger
-           IF "KetteLaufwagenDB".Station3.nArticleNumber > 0 AND #trig_MeasStart.Q THEN
+           IF "KetteLaufwagenDB".Station3.nProgrNumber > 0 AND #trig_MeasStart.Q THEN
                #step_St3 := 10;
            END_IF;
            
@@ -140,26 +140,26 @@ BEGIN
            #step_St3 := 20; // Analyze
            
        20: // Analyze Data
-           IF "KetteLaufwagenDB".Station3.bIsNewArticle THEN
-               // 6.1 New Article Logic
+           IF "KetteLaufwagenDB".Station3.bIsNewProgr THEN
+               // 6.1 New Progr Logic
                // 6.1.1 Find free slot
                FOR #tempIndex := 1 TO 999 DO
-                   IF "MaximalkonturDB".Articles[#tempIndex].nArticleNumber = 0 THEN
+                   IF "MaximalkonturDB".Progr[#tempIndex].nProgrNumber = 0 THEN
                        // 6.1.2 / 6.1.3 Store Data
-                       "MaximalkonturDB".Articles[#tempIndex].nArticleNumber := "KetteLaufwagenDB".Station3.nArticleNumber;
-                       "MaximalkonturDB".Articles[#tempIndex].nXbreiteRechts := "KetteLaufwagenDB".Station3.nActXbreiteRechts;
-                       "MaximalkonturDB".Articles[#tempIndex].nXbreitelinks := "KetteLaufwagenDB".Station3.nActXbreitelinks;
-                       "MaximalkonturDB".Articles[#tempIndex].nYlaenge := "KetteLaufwagenDB".Station3.nActYlaenge;
+                       "MaximalkonturDB".Progr[#tempIndex].nProgrNumber := "KetteLaufwagenDB".Station3.nProgrNumber;
+                       "MaximalkonturDB".Progr[#tempIndex].nXbreiteRechts := "KetteLaufwagenDB".Station3.nActXbreiteRechts;
+                       "MaximalkonturDB".Progr[#tempIndex].nXbreitelinks := "KetteLaufwagenDB".Station3.nActXbreitelinks;
+                       "MaximalkonturDB".Progr[#tempIndex].nYlaenge := "KetteLaufwagenDB".Station3.nActYlaenge;
                        
                        // 6.1.4 Reset Flag
-                       "KetteLaufwagenDB".Station3.bIsNewArticle := FALSE;
+                       "KetteLaufwagenDB".Station3.bIsNewProgr := FALSE;
                        #step_St3 := 30; // OK
                        EXIT;
                    END_IF;
                END_FOR;
                
            ELSE
-               // 6.2 Existing Article Logic
+               // 6.2 Existing Progr Logic
                // Compare Actual vs Nominal +/- Tolerance
                // Nominal
                // Note: We already loaded nominals in St2 into the Carriage Struct for convenience, 
@@ -182,11 +182,11 @@ BEGIN
        30: // 6.2.4 Contour OK
            // Copy to Station 4 (Handover)
            "KetteLaufwagenDB".Station4 := "KetteLaufwagenDB".Station3; 
-           "KetteLaufwagenDB".Station3.nArticleNumber := 0; // Clear St3
+           "KetteLaufwagenDB".Station3.nProgrNumber := 0; // Clear St3
            
            // Robot Handover Outputs
            #bPrgrReadyForRobot := TRUE;
-           #nPrgrNr_Robot := "KetteLaufwagenDB".Station4.nArticleNumber;
+           #nPrgrNr_Robot := "KetteLaufwagenDB".Station4.nProgrNumber;
            
            #step_St3 := 99; // Done for this cycle
            
@@ -216,7 +216,7 @@ BEGIN
            // Requirement: "Starte Funktionsbaustein fǬr Schrittkette RoboterǬbergabe" -> Done via outputs
            
            // If moved out (Simulated):
-           // "KetteLaufwagenDB".Station3.nArticleNumber := 0;
+           // "KetteLaufwagenDB".Station3.nProgrNumber := 0;
            // #step_St3 := 0;
    END_CASE;
 
@@ -229,7 +229,7 @@ BEGIN
    #bLightGreen := FALSE;
    #bHornAlarm := FALSE;
 
-   // Station 2: New Article / Unknown
+   // Station 2: New Progr / Unknown
    IF #step_St2 = 20 THEN
        #bLightRed := TRUE;
        #bLightGreen := TRUE; // Both True = Operator Check Req (4.2)

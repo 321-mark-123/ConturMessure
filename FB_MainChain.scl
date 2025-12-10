@@ -1,6 +1,6 @@
 FUNCTION_BLOCK "FB_MainChain"
 { S7_Optimized_Access := 'TRUE' }
-VERSION : 0.3
+VERSION : 0.4
    VAR_INPUT 
        // External IOs
        b_inPrgrNr : BOOL; 
@@ -75,7 +75,7 @@ BEGIN
        
        "KetteLaufwagenDB".Station3.nProgrNumber := 0;
        "KetteLaufwagenDB".Station3.bDataValid := FALSE;
-       "KetteLaufwagenDB".Station3.bIsNewArticle := FALSE;
+       "KetteLaufwagenDB".Station3.bIsNewProgr := FALSE; // Renamed
        
        "KetteLaufwagenDB".Station4.nProgrNumber := 0;
        "KetteLaufwagenDB".Station4.bDataValid := FALSE;
@@ -121,7 +121,7 @@ BEGIN
            bLightRed => #bSt2_ReqRed,     // Map to temp
            bLightGreen => #bSt2_ReqGreen, // Map to temp
            Data_Stn2 := "KetteLaufwagenDB".Station2,
-           DB_Master := "MaximalkonturDB".Progr);
+           DB_Master := "MaximalkonturDB".Progr); // Renamed
            
    #fb_St3(bIniMessungStart := #bIniMessungStart,
            bBtnGreen := #bBtnGreen,
@@ -139,7 +139,7 @@ BEGIN
            nPrgrNr_ToRobot => #nPrgrNr_ToRobot,
            Data_Stn3 := "KetteLaufwagenDB".Station3,
            Data_Stn4 := "KetteLaufwagenDB".Station4,
-           DB_Master := "MaximalkonturDB".Progr);
+           DB_Master := "MaximalkonturDB".Progr); // Renamed
            
    #fb_St4(Data_Stn4 := "KetteLaufwagenDB".Station4,
            b_Reset := #b_Reset OR #ton_Reset.Q,
@@ -157,10 +157,6 @@ BEGIN
    #bHornAlarm := #bSt3_ReqHorn; 
    
    // Green Light Logic:
-   // If Red is OFF, and Green is Requested -> Green ON
-   // (Prioritize Red/Error over Green/OK if needed, or simple OR)
-   // Usually Green is "System OK" or "Action Confirmed". 
-   // Strategy: Simple OR for now, but Red overrides visual attention usually.
    #bLightGreen := #bSt2_ReqGreen OR #bSt3_ReqGreen;
 
 END_FUNCTION_BLOCK

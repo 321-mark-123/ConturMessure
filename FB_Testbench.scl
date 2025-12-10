@@ -1,0 +1,180 @@
+FUNCTION_BLOCK "FB_Testbench"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT
+       // HMI Controls
+       bSim_StartSequence : BOOL;       // Trigger Simulation
+       nSim_ProgrNr : DINT := 1001;     // Progr ID to Test
+       nSim_Deviation : DINT := 0;      // Inject Deviation (mm)
+       bSim_Reset : BOOL; 
+       
+       // System Feedback (Outputs from MainChain)
+       b_outPrgrNr_Ack : BOOL; 
+       bLightRed : BOOL;
+       bLightGreen : BOOL;
+   END_VAR
+
+   VAR_OUTPUT
+       // Simulated Inputs (Connect to MainChain Inputs)
+       b_inPrgrNr : BOOL; 
+       n_inPrgrNr_Data : DINT;
+       n_inLaufWgNr_Data : DINT;
+       
+       bStation1_Occupied : BOOL;
+       bStation2_Arrival : BOOL;
+       bStation3_Arrival : BOOL;
+       bIniMessungStart : BOOL;
+       
+       i_Meas_XRechts : DINT;
+       i_Meas_XLinks : DINT;
+       i_Meas_YLaenge : DINT;
+       
+       // HMI Feedback
+       sSim_Status : STRING;
+       bSim_TestPassed : BOOL;
+   END_VAR
+
+   VAR
+       nState : INT := 0;
+       timer_Transport : TON;
+       timer_Ack : TON;
+       nStepTimer : INT; // Simple cycle counter or use TON
+   END_VAR
+   
+   CONST
+       ST_IDLE := 0;
+       ST_INJECT_ENTRY := 10;
+       ST_WAIT_ACK := 20;
+       ST_MOVE_TO_ST2 := 30;
+       ST_MOVE_TO_ST3 := 40;
+       ST_MEASURE := 50;
+       ST_VERIFY := 60;
+       ST_DONE := 99;
+   END_CONST
+
+BEGIN
+    // =========================================================
+    // SIMULATION STATE MACHINE
+    // =========================================================
+    
+    // Reset Logic
+    IF #bSim_Reset THEN
+        #nState := #ST_IDLE;
+        #bSim_TestPassed := FALSE;
+        #sSim_Status := 'RESET';
+        // Clear Outputs
+        #b_inPrgrNr := FALSE;
+        #bStation1_Occupied := FALSE;
+        #bStation2_Arrival := FALSE;
+        #bStation3_Arrival := FALSE;
+        #bIniMessungStart := FALSE;
+        RETURN;
+    END_IF;
+
+    CASE #nState OF
+        #ST_IDLE:
+            #sSim_Status := 'IDLE - Wait for Start';
+            IF #bSim_StartSequence THEN
+                #nState := #ST_INJECT_ENTRY;
+            END_IF;
+            
+        #ST_INJECT_ENTRY:
+            #sSim_Status := 'Step 1: Injecting Entry Data';
+            
+            // Simulate S7-1200 Handshake
+            #bStation1_Occupied := TRUE;
+            #n_inPrgrNr_Data := #nSim_ProgrNr;
+            #n_inLaufWgNr_Data := 1234; // Dummy Carriage ID
+            #b_inPrgrNr := TRUE; // Signal valid data
+            
+            #nState := #ST_WAIT_ACK;
+            
+        #ST_WAIT_ACK:
+            #sSim_Status := 'Step 1: Waiting for ACK';
+            
+            // Wait for PLC to acknowledge
+            IF #b_outPrgrNr_Ack THEN
+                // Handshake Complete
+                #b_inPrgrNr := FALSE; // Clear Signal
+                #bStation1_Occupied := FALSE; // Moved out
+                
+                #timer_Transport(IN := FALSE, PT := T#0s); // Reset Timer
+                #nState := #ST_MOVE_TO_ST2;
+            END_IF;
+            
+        #ST_MOVE_TO_ST2:
+            #sSim_Status := 'Step 2: Transport to St2';
+            
+            #timer_Transport(IN := TRUE, PT := T#2S); // Simulate 2s Transport
+            IF #timer_Transport.Q THEN
+                 #bStation2_Arrival := TRUE; // Pulse
+                 #timer_Transport(IN := FALSE, PT := T#0s); // Reset
+                 #nState := #ST_MOVE_TO_ST3;
+            ELSE
+                 #bStation2_Arrival := FALSE;
+            END_IF;
+            
+        #ST_MOVE_TO_ST3:
+            #sSim_Status := 'Step 3: Transport to St3';
+            #bStation2_Arrival := FALSE; // Clear Pulse
+            
+            #timer_Transport(IN := TRUE, PT := T#2S); // Simulate 2s Transport
+            IF #timer_Transport.Q THEN
+                 #bStation3_Arrival := TRUE; // Pulse
+                 #timer_Transport(IN := FALSE, PT := T#0s); // Reset
+                 #nState := #ST_MEASURE;
+            ELSE
+                 #bStation3_Arrival := FALSE;
+            END_IF;
+            
+        #ST_MEASURE:
+            #sSim_Status := 'Step 4: Measuring';
+            #bStation3_Arrival := FALSE; // Clear Pulse
+            
+            // Inject Measurement Values based on expectation
+            // Assumption: Nominal values are roughly 1000 for illustration
+            // We add the Deviation to X Right
+            #i_Meas_XRechts := 500 + #nSim_Deviation; 
+            #i_Meas_XLinks := 500;
+            #i_Meas_YLaenge := 1000;
+            
+            // Trigger Measurement
+            #bIniMessungStart := TRUE; 
+            
+            #timer_Transport(IN := TRUE, PT := T#200ms); // Short Pulse
+            IF #timer_Transport.Q THEN
+                 #bIniMessungStart := FALSE;
+                 #nState := #ST_VERIFY;
+            END_IF;
+            
+        #ST_VERIFY:
+            #sSim_Status := 'Step 5: Verifying Result';
+            
+            // Wait a bit for PLC processing
+            #timer_Transport(IN := TRUE, PT := T#1S);
+            
+            IF #timer_Transport.Q THEN
+                IF #nSim_Deviation = 0 AND #bLightGreen THEN
+                    #bSim_TestPassed := TRUE;
+                    #sSim_Status := 'PASS: Green Light ON as expected';
+                    #nState := #ST_DONE;
+                ELSIF #nSim_Deviation > 50 AND #bLightRed THEN
+                    #bSim_TestPassed := TRUE;
+                    #sSim_Status := 'PASS: Red Light ON as expected (Deviation)';
+                    #nState := #ST_DONE;
+                ELSIF #nSim_Deviation = 0 AND #bLightRed THEN
+                    #bSim_TestPassed := FALSE;
+                    #sSim_Status := 'FAIL: Red Light ON but expected Green';
+                    #nState := #ST_DONE;
+                ELSE
+                    #sSim_Status := 'WAIT: Check Lights...';
+                END_IF;
+            END_IF;
+            
+        #ST_DONE:
+             // Stay here until Reset
+             ;
+             
+    END_CASE;
+
+END_FUNCTION_BLOCK

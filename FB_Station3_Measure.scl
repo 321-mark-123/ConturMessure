@@ -1,6 +1,6 @@
 FUNCTION_BLOCK "FB_Station3_Measure"
 { S7_Optimized_Access := 'TRUE' }
-VERSION: 0.2
+VERSION: 0.3
    VAR_INPUT
       bIniMessungStart: BOOL; // Step 5 input
       bBtnGreen: BOOL;
@@ -29,7 +29,7 @@ VERSION: 0.2
    VAR_IN_OUT
       Data_Stn3: "typeCarriageData";
       Data_Stn4: "typeCarriageData";
-      DB_Master: ARRAY[0..999] OF "typeArticleDefinition";
+      DB_Master: ARRAY[0..999] OF "typeProgrDefinition"; // Renamed
    END_VAR
 
    VAR
@@ -101,7 +101,8 @@ BEGIN
       #STATE_EVALUATE:
          #bLightGreen := FALSE;
 
-         IF #Data_Stn3.bIsNewArticle THEN // Step 7.1
+         IF #Data_Stn3.bIsNewProgr THEN // Renamed from bIsNewArticle
+             // Step 7.1 New Progr Logic
              // Step 7.1.1 Find Free Slot
              FOR #nSearchIndex := 1 TO 999 DO
                  IF #DB_Master[#nSearchIndex].nProgrNumber = 0 THEN // Found Empty by ID
@@ -117,13 +118,13 @@ BEGIN
              #DB_Master[#nFoundIndex].nYlaenge := #Data_Stn3.nActYlaenge;
              
              // Step 7.1.4
-             #Data_Stn3.bIsNewArticle := FALSE; 
+             #Data_Stn3.bIsNewProgr := FALSE; 
              #Data_Stn3.nProgrNumber := #nFoundIndex; 
 
              #nState := #STATE_DONE_OK;
-             #sStateDesc := 'NEW_ARTICLE_SAVED';
+             #sStateDesc := 'NEW_PROGR_SAVED';
 
-         ELSE // Step 7.2 Existing Article
+         ELSE // Step 7.2 Existing Progr
              #nState := #STATE_SEARCH_EXISTING;
          END_IF;
          
@@ -160,7 +161,7 @@ BEGIN
              
       #STATE_CHECK_TOLERANCE: // Step 7.2.2
              // Compare with Tolerances (Using #nFoundIndex from Step 7.2.1)
-             // Note: #Data_Stn3.nArticleNumber is the ID, #nFoundIndex is the DB Index.
+             // Note: #Data_Stn3.nProgrNumber is the ID, #nFoundIndex is the DB Index.
              IF ABS(#Data_Stn3.nActXbreiteRechts - #DB_Master[#nFoundIndex].nXbreiteRechts)
                 > #DB_Master[#nFoundIndex].nTolX THEN
                 #nState := #STATE_ERROR;

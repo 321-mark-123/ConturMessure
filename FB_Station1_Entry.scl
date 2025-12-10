@@ -1,41 +1,41 @@
 FUNCTION_BLOCK "FB_Station1_Entry"
 { S7_Optimized_Access := 'TRUE' }
-VERSION : 0.1
-   VAR_INPUT 
-      b_inPrgrNr : BOOL; // Input from S7-1200
-      n_inPrgrNr_Data : DINT;
-      n_inLaufWgNr_Data : DINT;
-      bStation1_Occupied : BOOL;
-      b_Reset : BOOL;
-      b_enable : BOOL;
+VERSION: 0.1
+   VAR_INPUT
+      b_inPrgrNr: BOOL; // Input from S7-1200
+      n_inPrgrNr_Data: DINT;
+      n_inLaufWgNr_Data: DINT;
+      bStation1_Occupied: BOOL;
+      b_Reset: BOOL;
+      b_enable: BOOL;
    END_VAR
-   
-   VAR_OUTPUT 
-      b_outPrgrNr_Ack : BOOL; // Output to S7-1200
+
+   VAR_OUTPUT
+      b_outPrgrNr_Ack: BOOL; // Output to S7-1200
    END_VAR
-   
-   VAR_IN_OUT 
-      Data_Stn1 : "typeCarriageData";
+
+   VAR_IN_OUT
+      Data_Stn1: "typeCarriageData";
    END_VAR
-   
-   VAR 
-      trig_PrgrNr : R_TRIG;
-      sStateDesc : STRING; // Description of current state or action
+
+   VAR
+      trig_PrgrNr: R_TRIG;
+      sStateDesc: STRING; // Description of current state or action
    END_VAR
-   
+
 BEGIN
       IF #b_Reset THEN
-          #q_PrgrNr_Ack := FALSE; // q_PrgrNr_Ack mapped to b_outPrgrNr_Ack? Wait, I'm inside the FB logic.
+          #b_outPrgrNr_Ack := FALSE; // q_PrgrNr_Ack mapped to b_outPrgrNr_Ack? Wait, I'm inside the FB logic.
           // Wait, the output declaration was renamed. I must use the NEW name in the logic.
           #b_outPrgrNr_Ack := FALSE;
           #Data_Stn1.bDataValid := FALSE;
           #Data_Stn1.nProgrNumber := 0;
           #trig_PrgrNr(CLK := FALSE);
           #sStateDesc := 'RESET';
-          
+
       ELSIF #b_enable THEN
           #trig_PrgrNr(CLK := #b_inPrgrNr);
-          
+
           IF #trig_PrgrNr.Q THEN
               // Step 2.3 Store Data
               #Data_Stn1.nProgrNumber := #n_inPrgrNr_Data;
@@ -43,11 +43,11 @@ BEGIN
               #Data_Stn1.bDataValid := TRUE;
               #sStateDesc := 'DATA_STORED';
           END_IF;
-          
+
           // Step 2.2 Handshake Ack
-          #b_outPrgrNr_Ack := #b_inPrgrNr; 
-          
+          #b_outPrgrNr_Ack := #b_inPrgrNr;
+
           IF #sStateDesc = '' THEN #sStateDesc := 'RUNNING'; END_IF;
-      END_IF; 
-      
+      END_IF;
+
 END_FUNCTION_BLOCK
