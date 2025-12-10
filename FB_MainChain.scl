@@ -1,6 +1,6 @@
 FUNCTION_BLOCK "FB_MainChain"
 { S7_Optimized_Access := 'TRUE' }
-VERSION : 0.2
+VERSION : 0.3
    VAR_INPUT 
        // External IOs
        b_inPrgrNr : BOOL; 
@@ -48,13 +48,21 @@ VERSION : 0.2
        // Reset Logic
        ton_Reset : TON;
        bResetActive : BOOL;
+       
+       // Temporary Signals for Logic Combination
+       bSt2_ReqRed : BOOL;
+       bSt2_ReqGreen : BOOL;
+       
+       bSt3_ReqRed : BOOL;
+       bSt3_ReqGreen : BOOL;
+       bSt3_ReqHorn : BOOL;
    END_VAR
 
 BEGIN
    // ===================================
    // STEP INIT: GLOBAL RESET
    // ===================================
-   // "Alle Stationen werden gelöscht, wenn bBtnGreen AND bBtnRed == 5 seconds TRUE"
+   // "Alle Stationen werden gelscht, wenn bBtnGreen AND bBtnRed == 5 seconds TRUE"
    #ton_Reset(IN := #bBtnGreen AND #bBtnRed, PT := T#5S);
    
    IF #ton_Reset.Q THEN
@@ -71,10 +79,6 @@ BEGIN
        
        "KetteLaufwagenDB".Station4.nProgrNumber := 0;
        "KetteLaufwagenDB".Station4.bDataValid := FALSE;
-       
-       // Optional: Reset internal states of FBs if exposed, or just rely on DataValid
-       // In a real system we might need an explicit Reset input on FBs.
-       // For now, clearing the DataValid flags effectively resets the sequence flow.
    END_IF;
 
    // ===================================
@@ -114,8 +118,8 @@ BEGIN
            i_Clock_1Hz := #i_Clock_1Hz,
            b_Reset := #b_Reset OR #ton_Reset.Q,
            b_enable := #b_enable,
-           bLightRed => #bLightRed, 
-           bLightGreen => #bLightGreen,
+           bLightRed => #bSt2_ReqRed,     // Map to temp
+           bLightGreen => #bSt2_ReqGreen, // Map to temp
            Data_Stn2 := "KetteLaufwagenDB".Station2,
            DB_Master := "MaximalkonturDB".Progr);
            
@@ -128,22 +132,35 @@ BEGIN
            nMeas_YLaenge := #i_Meas_YLaenge,
            b_Reset := #b_Reset OR #ton_Reset.Q,
            b_enable := #b_enable,
-           bLightRed => #bLightRed, // Note: Overwrites St2 lights if concurrent? Logic might need OR-ing
-           bLightGreen => #bLightGreen,
-           bHornAlarm => #bHornAlarm,
+           bLightRed => #bSt3_ReqRed,   // Map to temp
+           bLightGreen => #bSt3_ReqGreen, // Map to temp
+           bHornAlarm => #bSt3_ReqHorn,   // Map to temp
            bPrgrReadyForRobot => #bPrgrReadyForRobot,
            nPrgrNr_ToRobot => #nPrgrNr_ToRobot,
            Data_Stn3 := "KetteLaufwagenDB".Station3,
            Data_Stn4 := "KetteLaufwagenDB".Station4,
            DB_Master := "MaximalkonturDB".Progr);
            
-   // Note On Lights: Real system needs priority arbiter. 
-   // Currently St3 writes last so it dominates if active.
-   
    #fb_St4(Data_Stn4 := "KetteLaufwagenDB".Station4,
            b_Reset := #b_Reset OR #ton_Reset.Q,
            b_enable := #b_enable,
            bPrgrReadyForRobot => #bPrgrReadyForRobot,
            nPrgrNr_Robot => #nPrgrNr_ToRobot);
+           
+   // ===================================
+   // OUTPUT LOGIC COMBINATION (OR-Logic)
+   // ===================================
+   // If ANY station requests RED, Turn RED ON.
+   #bLightRed := #bSt2_ReqRed OR #bSt3_ReqRed;
+   
+   // If ANY station requests HORN, Turn HORN ON.
+   #bHornAlarm := #bSt3_ReqHorn; 
+   
+   // Green Light Logic:
+   // If Red is OFF, and Green is Requested -> Green ON
+   // (Prioritize Red/Error over Green/OK if needed, or simple OR)
+   // Usually Green is "System OK" or "Action Confirmed". 
+   // Strategy: Simple OR for now, but Red overrides visual attention usually.
+   #bLightGreen := #bSt2_ReqGreen OR #bSt3_ReqGreen;
 
 END_FUNCTION_BLOCK

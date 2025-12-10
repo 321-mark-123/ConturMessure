@@ -1,14 +1,20 @@
 <ProcessFlow>
-    <Description>Detaillierter Ablauf der Schrittkette für das Konturmesssystem.</Description>
+    <Description>Detaillierter Ablauf der Schrittkette fǬr das Konturmesssystem.</Description>
+    
+    <Architecture>
+        <Principle>Modular Design</Principle>
+        <Rule>Logic resides INSIDE Station FBs. Main Chain only calls FBs.</Rule>
+        <Rule>Output Signals (Lights, Horns) are combined in Main Chain (OR-Logic). Station FBs provide status requests (e.g., bReq_RedLight).</Rule>
+    </Architecture>
 
     <GlobalReset>
         <Name>StepInit</Name>
-        <Condition>bBtnGreen AND bBtnRed (beide TRUE für > 5 Sekunden)</Condition>
-        <Action>Alle Stationsdaten in "KetteLaufwagenDB" werden gelöscht (Reset). sStateDesc gesetzt auf "RESET".</Action>
+        <Condition>bBtnGreen AND bBtnRed (beide TRUE fǬr > 5 Sekunden)</Condition>
+        <Action>Alle Stationsdaten in "KetteLaufwagenDB" werden gelscht (Reset). sStateDesc gesetzt auf "RESET".</Action>
     </GlobalReset>
 
     <Station1>
-        <Description>Einlauf & Datenübernahme</Description>
+        <Description>Einlauf & DatenǬbernahme</Description>
         <Step2>
             <Input>b_inPrgrNr (BOOL) von S7-1200</Input>
             <Action>
@@ -22,7 +28,7 @@
     </Station1>
 
     <Station2>
-        <Description>Prüfung & Teach-In</Description>
+        <Description>PrǬfung & Teach-In</Description>
         <Logic>
             - Daten werden beim Transport von Station 1 nach Station 2 geschoben.
             - Suche im "MaximalkonturDB.Progr" (Loop 0..999) nach 'nProgrNumber'.
@@ -33,7 +39,7 @@
         </Case_Found>
         <Case_NotFound>
             - Wenn NICHT gefunden (sStateDesc="SEARCH_NOT_FOUND"):
-            - Output: bLightRed = TRUE, bLightGreen = TRUE.
+            - Output: Request Red Light + Request Green Light.
             - Warte auf Bediener (bBtnGreen, sStateDesc="WAIT_TEACH_IN").
             - Bei Tastendruck: Setze bIsNewArticle = TRUE (sStateDesc="TEACH_IN_CONFIRMED").
             - Weiter zu Station 3.
@@ -45,7 +51,7 @@
         <Logic>
             - Daten von Station 2 nach Station 3.
             - Warte auf 'bIniMessungStart'.
-            - Führe Messung durch (Simulation: Übernahme Input-Werte).
+            - FǬhre Messung durch (Simulation: obernahme Input-Werte).
         </Logic>
         
         <Branch_NewArticle>
@@ -62,20 +68,20 @@
         <Branch_ExistingArticle>
             <Condition>bIsNewArticle == FALSE</Condition>
             <Step7.2.1>
-                <Action>Suche Datensatz im DB über nProgrNumber (Loop).</Action>
+                <Action>Suche Datensatz im DB Ǭber nProgrNumber (Loop).</Action>
                 <Error>Nicht gefunden -> Alarm (sStateDesc="ERROR_PRGR_NOT_FOUND").</Error>
             </Step7.2.1>
             <Step7.2.2>
                 <Action>Vergleiche Ist-Werter mit Soll-Werten (inkl. Toleranzen).</Action>
             </Step7.2.2>
             <Result_OK>
-                - bLightGreen = TRUE.
+                - Request Green Light = TRUE.
                 - bPrgrReadyForRobot = TRUE.
                 - Output nPrgrNr_ToRobot = nProgrNumber.
                 - sStateDesc="DONE_READY_TO_MOVE".
             </Result_OK>
             <Result_Error>
-                - Abweichung erkannt -> bLightRed (Blinkt) + bHornAlarm (Blinkt).
+                - Abweichung erkannt -> Request Red Light (Flash) + Request Horn (Flash).
                 - Operator Choice:
                     - bBtnGreen (> 5s): Akzeptieren -> OK.
                     - bBtnRed: Ablehnen -> NOK.
@@ -83,14 +89,14 @@
             <Result_NOK>
                 - bPrgrReadyForRobot = FALSE.
                 - Output nPrgrNr_ToRobot = 999.
-                - bLightRed (Blinkt), bHornAlarm (Blinkt).
+                - Request Red Light (Flash), Request Horn (Flash).
                 - sStateDesc="REJECTED_BY_OPERATOR" (if Red pressed).
             </Result_NOK>
         </Branch_ExistingArticle>
     </Station3>
 
     <Station4>
-        <Description>Übergabe an Roboter</Description>
+        <Description>obergabe an Roboter</Description>
         <Action>
             - Daten von Station 3 nach Station 4.
             - Bereitstellung der Signale 'bPrgrReadyForRobot' und 'nPrgrNr_Robot'.

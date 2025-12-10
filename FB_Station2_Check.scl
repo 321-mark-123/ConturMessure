@@ -61,6 +61,9 @@ BEGIN
                    #Data_Stn2.nYlaenge := #DB_Master[#tempIndex].nYlaenge;
                    #Data_Stn2.nTolX := #DB_Master[#tempIndex].nTolX;
                    #Data_Stn2.nTolY := #DB_Master[#tempIndex].nTolY;
+                   // FIX: Added copy of Relative Tolerances
+                   #Data_Stn2.nRelTolX := #DB_Master[#tempIndex].nRelTolX;
+                   #Data_Stn2.nRelTolY := #DB_Master[#tempIndex].nRelTolY;
                    EXIT; // Found
                END_IF;
            END_FOR;
@@ -95,10 +98,7 @@ BEGIN
            IF NOT #Data_Stn2.bDataValid THEN // Reset when data moved out
                #nState := 0;
            END_IF;
-       70:
-           IF NOT #Data_Stn2.bDataValid THEN // Reset when data moved out
-               #nState := 0;
-           END_IF;
+           
        END_CASE;
    END_IF;
 END_FUNCTION_BLOCK

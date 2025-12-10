@@ -1,123 +1,82 @@
 FUNCTION_BLOCK "FB_ChainControl"
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// DEPRECATED / LEGACY
+// Please use "FB_MainChain" instead. This block is for reference only.
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 { S7_Optimized_Access := 'TRUE' }
-VERSION : 0.1
-   VAR_INPUT 
-      bBtnRed : BOOL; // Gehänge weiterfördern / für Roboterlackierbetrieb sperren (NOK confirm)
-      bBtnGreen : BOOL; // Gehänge weiterfördern / für Roboterlackierbetrieb freigeben (OK confirm / Teach)
-      bKeySwitch : BOOL; // Schlüsselschalter zum Einlernen neuer Typen
-      
-      // Position Sensors / Status
-      bStation1_Occupied : BOOL; // Laufwagen steht in Stopper-1
-      bStation2_Arrival : BOOL; // Laufwagen hat Stopper-1 verlassen -> Ankunft Station 2
-      bStation3_Arrival : BOOL; // Laufwagen an Messtation
-      bStation3_Occupied : BOOL; 
-      bStation4_Arrival : BOOL; // Laufwagen Messung Ok Programmübergabe
-      
-      bIniMessungStart : BOOL; // Trigger Measurement
-      
-      // S7-1200 Interface
-      i_PrgrNr : BOOL; // Bit PrgrNr empfangen (Simplified representation, likely handshake bit)
-      i_PrgrNr_Data : DINT; // The actual program number from S7-1200
-      i_LaufWgNr_Data : DINT; // The actual carriage number from S7-1200
-      
-      // Measurement Inputs (Simulated connection to Sick sensors)
-      i_Meas_X_Right : DINT;
-      i_Meas_X_Left  : DINT;
-      i_Meas_Y_Vertical : DINT;
-
-      // System Tickers/Clocks
-      i_Clock_1Hz : BOOL;
+VERSION: 0.1
+   VAR_INPUT
+      bBtnGreen: BOOL;
+      bBtnRed: BOOL;
+      bKeySwitch: BOOL;
+      bIniMessungStart: BOOL;
+      bStation1_Occupied: BOOL;
+      bStation2_Arrival: BOOL;
+      bStation3_Arrival: BOOL;
+      i_Meas_X_Right: DINT;
+      i_Meas_X_Left: DINT;
+      i_Meas_Y_Vertical: DINT;
+      i_Clock_1Hz: BOOL;
+      b_Reset : BOOL;
+      b_enable : BOOL;
    END_VAR
 
-   VAR_OUTPUT 
-      bLightRed : BOOL; // Flashing: Deviation; True: Deviation+ActionReq
-      bLightGreen : BOOL; // Flashing: Measuring; True: OK
-      bHornAlarm : BOOL; // Flashing: Deviation; True: New Article
-      
-      bPrgrReadyForRobot : BOOL; // Programmübergabe an Roboter freigeben
-      nPrgrNr_Robot : DINT; // Output to Robot
-      
-      q_PrgrNr_Ack : BOOL; // Handshake to S7-1200
+   VAR_OUTPUT
+      bLightRed: BOOL;
+      bLightGreen: BOOL;
+      bHornAlarm: BOOL;
+      bPrgrReadyForRobot: BOOL;
+      nPrgrNr_Robot: DINT;
    END_VAR
 
-   VAR 
-      // State Machines / Internal States
-      step_St2 : INT; 
-      step_St3 : INT;
+   VAR
+      step_St2: INT;
+      step_St3: INT;
+      tempIndex: INT;
+      bFound: BOOL;
       
-      // Flasher helpers
-      bFlash : BOOL;
-      timer_Flash : TON;
+      trig_St2_Arr: R_TRIG;
+      trig_St3_Arr: R_TRIG;
       
-      // Edge detection
-      trig_BtnGreen : R_TRIG;
-      trig_BtnRed : R_TRIG;
-      trig_St1_Occ : R_TRIG;
-      trig_St2_Arr : R_TRIG;
-      trig_St3_Arr : R_TRIG;
-      trig_MeasStart : R_TRIG;
-
-      // Internal storage for search
-      tempIndex : INT;
-      bFound : BOOL;
+      trig_BtnGreen: R_TRIG;
+      trig_BtnRed: R_TRIG;
+      trig_MeasStart: R_TRIG;
       
-      // Timers
-      timer_Teach : TON;
+      timer_Teach: TON;
+      
+      bFlash: BOOL;
    END_VAR
 
 BEGIN
-   // =============================================================
-   // Utils
-   // =============================================================
-   // Flash signal generation (approx 1Hz based on cycle or use input clock)
-   #timer_Flash(IN := NOT #timer_Flash.Q, PT := T#500MS);
-   #bFlash := #timer_Flash.Q;
+   // -------------------------------------------------------------
+   // TRIGGER & CLOCK
+   // -------------------------------------------------------------
+   #trig_St2_Arr(CLK := #bStation2_Arrival);
+   #trig_St3_Arr(CLK := #bStation3_Arrival);
    
-   // Edges
    #trig_BtnGreen(CLK := #bBtnGreen);
    #trig_BtnRed(CLK := #bBtnRed);
-   #trig_St1_Occ(CLK := #bStation1_Occupied); // Using sensor for "Step 1"
-   #trig_St2_Arr(CLK := #bStation2_Arrival);
-   #trig_St3_Arr(CLK := #bStation3_Arrival); 
    #trig_MeasStart(CLK := #bIniMessungStart);
+   
+   // Fake Flasher
+   #bFlash := #i_Clock_1Hz;
 
-   // =============================================================
-   // STATION 1: Entry from S7-1200
-   // =============================================================
-   // Step 2: S7-1200 übergibt Programmnummer und Laufwagennummer
-   // Handshake Logic (Primitive)
-   IF #i_PrgrNr THEN 
-       // Copy Data to Station 1 DB
-       "KetteLaufwagenDB".Station1.nArticleNumber := #i_PrgrNr_Data;
-       "KetteLaufwagenDB".Station1.nLaufWgNrNumber := #i_LaufWgNr_Data;
-       
-       // Ack
-       #q_PrgrNr_Ack := TRUE;
-   ELSE
-       #q_PrgrNr_Ack := FALSE;
-   END_IF;
-
-   // Step 3: Shift 1 -> 2 when leaving Station 1 (Simulated by St2 Arrival for simplicity of chain)
-   IF #trig_St2_Arr.Q THEN // Step 3
+   // -------------------------------------------------------------
+   // STATION 2: Check & Teach-In
+   // -------------------------------------------------------------
+   // Step 4: Arrival St2
+   IF #trig_St2_Arr.Q THEN
        "KetteLaufwagenDB".Station2 := "KetteLaufwagenDB".Station1;
-       // Clear Station 1 (Optional, good for debug)
-       "KetteLaufwagenDB".Station1.nArticleNumber := 0;
-       "KetteLaufwagenDB".Station1.nLaufWgNrNumber := 0;
-       
-       // Reset State2
-       #step_St2 := 0; 
+       "KetteLaufwagenDB".Station1.nArticleNumber := 0; // Clear Prev
+       #step_St2 := 0;
    END_IF;
 
-   // =============================================================
-   // STATION 2: Search & Validation
-   // =============================================================
-   // Step 4: Search Program Number
    CASE #step_St2 OF
-       0: // Idle / Start Search
-           IF "KetteLaufwagenDB".Station2.nArticleNumber > 0 THEN
+       0: // Idle / Analysis
+          IF "KetteLaufwagenDB".Station2.nArticleNumber > 0 THEN
+               // Check DB for Article
                #bFound := FALSE;
-               // Search in MaximalkonturDB
-               FOR #tempIndex := 1 TO 999 DO
+               FOR #tempIndex := 0 TO 999 DO
                    IF "MaximalkonturDB".Articles[#tempIndex].nArticleNumber = "KetteLaufwagenDB".Station2.nArticleNumber THEN
                        #bFound := TRUE;
                        // Load Nominal Data (Optional: copy nom data to carriage for comparison later?)
@@ -254,7 +213,7 @@ BEGIN
            #nPrgrNr_Robot := 999;
            // Stay here until reset? Or move out? 
            // Usually move to reject lane. For this FB, we hold state or clear.
-           // Requirement: "Starte Funktionsbaustein für Schrittkette Roboterübergabe" -> Done via outputs
+           // Requirement: "Starte Funktionsbaustein fǬr Schrittkette RoboterǬbergabe" -> Done via outputs
            
            // If moved out (Simulated):
            // "KetteLaufwagenDB".Station3.nArticleNumber := 0;

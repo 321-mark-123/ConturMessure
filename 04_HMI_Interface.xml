@@ -1,0 +1,39 @@
+<HMI_Interface>
+    <Description>Definition of the interface between the Siemens S7-1500 PLC and the Unified Comfort Panel.</Description>
+    
+    <BestPractices>
+        <Rule>Use User Data Types (UDTs) for efficient tag communication (Optimize Block Access).</Rule>
+        <Rule>Group signals by Station/Functionality.</Rule>
+        <Rule>Status Integers should be mapped to Text Lists in the HMI.</Rule>
+    </BestPractices>
+
+    <Structures>
+        <UDT Name="HMI_Station_Common">
+            <Member Name="nState" Type="Int">Current Step Number</Member>
+            <Member Name="sStateDesc" Type="String">Textual Description of State</Member>
+            <Member Name="bError" Type="Bool">Fault Active</Member>
+            <Member Name="bOccupied" Type="Bool">Station Occupied / Data Valid</Member>
+        </UDT>
+
+        <UDT Name="HMI_Main_Control">
+            <Member Name="bSystemReady" Type="Bool">System is powered and enabled</Member>
+            <Member Name="bResetActive" Type="Bool">Reset Sequence is running</Member>
+            <Member Name="nTotalArticlesProduced" Type="DInt">Counter</Member>
+        </UDT>
+    </Structures>
+
+    <Mapping>
+        <Block Name="FB_Station1">
+            <Tag Name="HMI_St1" Type="HMI_Station_Common" />
+        </Block>
+        <Block Name="FB_Station2">
+            <Tag Name="HMI_St2" Type="HMI_Station_Common" />
+        </Block>
+        <Block Name="FB_Station3">
+            <Tag Name="HMI_St3" Type="HMI_Station_Common" />
+            <Tag Name="nActXRight" Type="DInt" />
+            <Tag Name="nActXLeft" Type="DInt" />
+            <Tag Name="nActYLen" Type="DInt" />
+        </Block>
+    </Mapping>
+</HMI_Interface>
