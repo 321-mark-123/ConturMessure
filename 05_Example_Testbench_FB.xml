@@ -1,0 +1,46 @@
+<Testbench>
+    <Description>
+        Definition of a Simulation Block (`FB_Testbench`) to validate the Main Chain logic. 
+        It acts as a virtual physical model of the conveyor and sensors, coupled with an HMI interface for manual triggering.
+    </Description>
+    
+    <Interfaces>
+        <HMI_Input>
+            <Tag Name="bSim_StartSequence" Type="Bool">Button: Start a carrier at St1</Tag>
+            <Tag Name="nSim_ProgrNr" Type="DINT">Example Progr ID to load</Tag>
+            <Tag Name="nSim_Deviation" Type="DINT">Inject deviation (mm) for testing NOK case</Tag>
+            <Tag Name="i_Clock_5Hz" Type="Bool">Fast Clock for Simulation</Tag>
+        </HMI_Input>
+        
+        <HMI_Output>
+            <Tag Name="sSim_Status" Type="String">Current Simulation Step</Tag>
+            <Tag Name="bSim_TestPassed" Type="Bool">Indicator</Tag>
+        </HMI_Output>
+    </Interfaces>
+
+    <SimulationLogic>
+        <Sequence Name="Virtual Material Flow">
+            <Step1>
+                <Trigger>bSim_StartSequence</Trigger>
+                <Action>Set `bStation1_Occupied` = TRUE, `b_inPrgrNr` = TRUE.</Action>
+                <Wait>Wait for `b_outPrgrNr_Ack` from PLC.</Wait>
+            </Step1>
+            <Step2>
+                <Action>Clear St1 Inputs. Wait 2s (Transport).</Action>
+                <Action>Set `bStation2_Arrival` = TRUE (Pulse).</Action>
+            </Step2>
+            <Step3>
+                <Action>Wait 2s.</Action>
+                <Action>Set `bStation3_Arrival` = TRUE (Pulse).</Action>
+            </Step3>
+            <Step4>
+                <Action>Wait for `MainChain` to request Measurement.</Action>
+                <Action>Inject `i_Meas_...` values based on ProgrNr + Deviation.</Action>
+                <Action>Set `bIniMessungStart` = TRUE (Pulse).</Action>
+            </Step4>
+            <Step5>
+                <Action>Monitor `bLightGreen` (OK) or `bLightRed` (NOK) to verify result matches injected deviation.</Action>
+            </Step5>
+        </Sequence>
+    </SimulationLogic>
+</Testbench>

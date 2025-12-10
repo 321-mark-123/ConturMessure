@@ -1,0 +1,29 @@
+<Examples>
+    <Note>
+        Diese Beispiele dienen als Referenz für die SCL-Syntax und grundlegende Logik-Muster.
+    </Note>
+
+    <Example_SearchLoop>
+        <Description>Muster für die Suche nach einer Programmnummer im DB.</Description>
+        <Code>
+            FOR #tempIndex := 0 TO 999 DO
+               IF "MaximalkonturDB".Progr[#tempIndex].nProgrNumber = #TargetID THEN
+                   #FoundIndex := #tempIndex;
+                   EXIT;
+               END_IF;
+            END_FOR;
+        </Code>
+    </Example_SearchLoop>
+
+    <Example_FreeSlotSearch>
+        <Description>Muster für das Finden eines freien Speicherplatzes.</Description>
+        <Code>
+            FOR #tempIndex := 1 TO 999 DO
+               IF "MaximalkonturDB".Progr[#tempIndex].nProgrNumber = 0 THEN
+                   #FreeIndex := #tempIndex;
+                   EXIT;
+               END_IF;
+            END_FOR;
+        </Code>
+    </Example_FreeSlotSearch>
+</Examples>
