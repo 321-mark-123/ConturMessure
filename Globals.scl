@@ -1,0 +1,23 @@
+DATA_BLOCK "MaximalkonturDB"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR
+      Articles : Array[0..999] of "typeArticleDefinition";
+      nUsed : Int;
+   END_VAR
+BEGIN
+
+END_DATA_BLOCK
+
+DATA_BLOCK "KetteLaufwagenDB"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR
+      Station1 : "typeCarriageData";
+      Station2 : "typeCarriageData";
+      Station3 : "typeCarriageData";
+      Station4 : "typeCarriageData";
+   END_VAR
+BEGIN
+
+END_DATA_BLOCK

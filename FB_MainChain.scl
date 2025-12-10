@@ -1,0 +1,149 @@
+FUNCTION_BLOCK "FB_MainChain"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.2
+   VAR_INPUT 
+       // External IOs
+       b_inPrgrNr : BOOL; 
+       n_inPrgrNr_Data : DINT;
+       n_inLaufWgNr_Data : DINT;
+       
+       bBtnGreen : BOOL;
+       bBtnRed : BOOL;
+       bKeySwitch : BOOL;
+       bIniMessungStart : BOOL;
+       
+       // Sensors
+       bStation1_Occupied : BOOL;
+       bStation2_Arrival : BOOL;
+       bStation3_Arrival : BOOL;
+       
+       i_Meas_XRechts : DINT;
+       i_Meas_XLinks : DINT;
+       i_Meas_YLaenge : DINT;
+       
+       i_Clock_1Hz : BOOL;
+       
+       b_Reset : BOOL;
+       b_enable : BOOL;
+   END_VAR
+   
+   VAR_OUTPUT 
+       b_outPrgrNr_Ack : BOOL; // Renamed from q_PrgrNr_Ack
+       bLightRed : BOOL;
+       bLightGreen : BOOL;
+       bHornAlarm : BOOL;
+       bPrgrReadyForRobot : BOOL;
+       nPrgrNr_ToRobot : DINT;
+   END_VAR
+   
+   VAR 
+       fb_St1 : "FB_Station1_Entry";
+       fb_St2 : "FB_Station2_Check";
+       fb_St3 : "FB_Station3_Measure";
+       fb_St4 : "FB_Station4_Robot";
+       
+       trig_St2_Arr : R_TRIG;
+       trig_St3_Arr : R_TRIG;
+       
+       // Reset Logic
+       ton_Reset : TON;
+       bResetActive : BOOL;
+   END_VAR
+
+BEGIN
+   // ===================================
+   // STEP INIT: GLOBAL RESET
+   // ===================================
+   // "Alle Stationen werden gelöscht, wenn bBtnGreen AND bBtnRed == 5 seconds TRUE"
+   #ton_Reset(IN := #bBtnGreen AND #bBtnRed, PT := T#5S);
+   
+   IF #ton_Reset.Q THEN
+       // Reset All Data
+       "KetteLaufwagenDB".Station1.nProgrNumber := 0;
+       "KetteLaufwagenDB".Station1.bDataValid := FALSE;
+       
+       "KetteLaufwagenDB".Station2.nProgrNumber := 0;
+       "KetteLaufwagenDB".Station2.bDataValid := FALSE;
+       
+       "KetteLaufwagenDB".Station3.nProgrNumber := 0;
+       "KetteLaufwagenDB".Station3.bDataValid := FALSE;
+       "KetteLaufwagenDB".Station3.bIsNewArticle := FALSE;
+       
+       "KetteLaufwagenDB".Station4.nProgrNumber := 0;
+       "KetteLaufwagenDB".Station4.bDataValid := FALSE;
+       
+       // Optional: Reset internal states of FBs if exposed, or just rely on DataValid
+       // In a real system we might need an explicit Reset input on FBs.
+       // For now, clearing the DataValid flags effectively resets the sequence flow.
+   END_IF;
+
+   // ===================================
+   // TRANSPORT LOGIC (SHIFT DATA)
+   // ===================================
+   // Only shift if NOT resetting
+   IF NOT #ton_Reset.Q THEN
+       #trig_St2_Arr(CLK := #bStation2_Arrival);
+       IF #trig_St2_Arr.Q THEN
+           "KetteLaufwagenDB".Station2 := "KetteLaufwagenDB".Station1;
+           "KetteLaufwagenDB".Station1.nProgrNumber := 0; 
+           "KetteLaufwagenDB".Station1.bDataValid := FALSE;
+       END_IF;
+       
+       #trig_St3_Arr(CLK := #bStation3_Arrival);
+       IF #trig_St3_Arr.Q THEN
+           "KetteLaufwagenDB".Station3 := "KetteLaufwagenDB".Station2;
+           "KetteLaufwagenDB".Station2.nProgrNumber := 0;
+           "KetteLaufwagenDB".Station2.bDataValid := FALSE;
+       END_IF;
+   END_IF;
+
+   // ===================================
+   // STATION BLOCKS
+   // ===================================
+   
+   #fb_St1(b_inPrgrNr := #b_inPrgrNr,
+           n_inPrgrNr_Data := #n_inPrgrNr_Data,
+           n_inLaufWgNr_Data := #n_inLaufWgNr_Data,
+           bStation1_Occupied := #bStation1_Occupied,
+           b_Reset := #b_Reset OR #ton_Reset.Q,
+           b_enable := #b_enable,
+           b_outPrgrNr_Ack => #b_outPrgrNr_Ack,
+           Data_Stn1 := "KetteLaufwagenDB".Station1);
+
+   #fb_St2(bBtnGreen := #bBtnGreen,
+           i_Clock_1Hz := #i_Clock_1Hz,
+           b_Reset := #b_Reset OR #ton_Reset.Q,
+           b_enable := #b_enable,
+           bLightRed => #bLightRed, 
+           bLightGreen => #bLightGreen,
+           Data_Stn2 := "KetteLaufwagenDB".Station2,
+           DB_Master := "MaximalkonturDB".Progr);
+           
+   #fb_St3(bIniMessungStart := #bIniMessungStart,
+           bBtnGreen := #bBtnGreen,
+           bBtnRed := #bBtnRed,
+           i_Clock_1Hz := #i_Clock_1Hz,
+           nMeas_XRechts := #i_Meas_XRechts,
+           nMeas_XLinks := #i_Meas_XLinks,
+           nMeas_YLaenge := #i_Meas_YLaenge,
+           b_Reset := #b_Reset OR #ton_Reset.Q,
+           b_enable := #b_enable,
+           bLightRed => #bLightRed, // Note: Overwrites St2 lights if concurrent? Logic might need OR-ing
+           bLightGreen => #bLightGreen,
+           bHornAlarm => #bHornAlarm,
+           bPrgrReadyForRobot => #bPrgrReadyForRobot,
+           nPrgrNr_ToRobot => #nPrgrNr_ToRobot,
+           Data_Stn3 := "KetteLaufwagenDB".Station3,
+           Data_Stn4 := "KetteLaufwagenDB".Station4,
+           DB_Master := "MaximalkonturDB".Progr);
+           
+   // Note On Lights: Real system needs priority arbiter. 
+   // Currently St3 writes last so it dominates if active.
+   
+   #fb_St4(Data_Stn4 := "KetteLaufwagenDB".Station4,
+           b_Reset := #b_Reset OR #ton_Reset.Q,
+           b_enable := #b_enable,
+           bPrgrReadyForRobot => #bPrgrReadyForRobot,
+           nPrgrNr_Robot => #nPrgrNr_ToRobot);
+
+END_FUNCTION_BLOCK

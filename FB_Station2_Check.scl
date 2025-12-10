@@ -1,0 +1,104 @@
+FUNCTION_BLOCK "FB_Station2_Check"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION: 0.1
+   VAR_INPUT
+      bBtnGreen: BOOL;
+      i_Clock_1Hz: BOOL;
+      b_Reset : BOOL;
+      b_enable : BOOL;
+   END_VAR
+
+   VAR_OUTPUT
+      bLightRed: BOOL;
+      bLightGreen: BOOL;
+      bDone: BOOL; // Ready to move to Stn3
+      nFoundIndex : INT; // Debug: Index found in DB
+   END_VAR
+
+   VAR_IN_OUT
+      Data_Stn2: "typeCarriageData";
+      DB_Master: ARRAY[0..999] OF "typeArticleDefinition";
+   END_VAR
+
+   VAR
+      nState: INT;
+      tempIndex: INT;
+      bFound: BOOL;
+      sStateDesc : STRING; // Description of current state
+   END_VAR
+
+BEGIN
+   IF #b_Reset THEN
+       #nState := 0;
+       #bLightRed := FALSE;
+       #bLightGreen := FALSE;
+       #bDone := FALSE;
+       #nFoundIndex := 0;
+       #sStateDesc := 'RESET';
+       
+   ELSIF #b_enable THEN
+       CASE #nState OF
+       0: // Idle
+           IF #Data_Stn2.bDataValid THEN
+               #bDone := FALSE;
+               #nState := 10;
+               #sStateDesc := 'IDLE_DATA_RECEIVED';
+           ELSE
+               #sStateDesc := 'IDLE_WAIT_DATA';
+           END_IF;
+
+       10: // Search for Article number in DB
+           #bFound := FALSE;
+           #tempIndex := 0;
+           
+           FOR #tempIndex := 0 TO 999 DO
+               IF #DB_Master[#tempIndex].nProgrNumber = #Data_Stn2.nProgrNumber THEN
+                   #bFound := TRUE;
+                   #nFoundIndex := #tempIndex;
+                   // Copy Nominal Data
+                   #Data_Stn2.nXbreiteRechts := #DB_Master[#tempIndex].nXbreiteRechts;
+                   #Data_Stn2.nXbreitelinks := #DB_Master[#tempIndex].nXbreitelinks;
+                   #Data_Stn2.nYlaenge := #DB_Master[#tempIndex].nYlaenge;
+                   #Data_Stn2.nTolX := #DB_Master[#tempIndex].nTolX;
+                   #Data_Stn2.nTolY := #DB_Master[#tempIndex].nTolY;
+                   EXIT; // Found
+               END_IF;
+           END_FOR;
+
+           IF #bFound THEN
+               #Data_Stn2.bIsNewArticle := FALSE;
+               #nState := 30; // Done
+               #sStateDesc := 'SEARCH_FOUND';
+           ELSE
+               #nState := 20; // Not Found
+               #sStateDesc := 'SEARCH_NOT_FOUND';
+           END_IF;
+
+       20: // Not Found - Wait for Operator
+           #bLightRed := TRUE;
+           #bLightGreen := TRUE; // Both True = Check Req
+           #sStateDesc := 'WAIT_TEACH_IN';
+
+           IF #bBtnGreen THEN
+               // Teach In Confirmed
+               #Data_Stn2.bIsNewArticle := TRUE;
+               #nState := 30;
+               #sStateDesc := 'TEACH_IN_CONFIRMED';
+           END_IF;
+
+       30: // Ready
+           #bLightRed := FALSE;
+           #bLightGreen := FALSE;
+           #bDone := TRUE;
+           #sStateDesc := 'DONE_READY_TO_MOVE';
+
+           IF NOT #Data_Stn2.bDataValid THEN // Reset when data moved out
+               #nState := 0;
+           END_IF;
+       70:
+           IF NOT #Data_Stn2.bDataValid THEN // Reset when data moved out
+               #nState := 0;
+           END_IF;
+       END_CASE;
+   END_IF;
+END_FUNCTION_BLOCK

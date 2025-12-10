@@ -1,0 +1,12 @@
+DATA_BLOCK "KetteLaufwagenDB"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR
+      Station1 : "typeCarriageData";
+      Station2 : "typeCarriageData";
+      Station3 : "typeCarriageData";
+      Station4 : "typeCarriageData";
+   END_VAR
+BEGIN
+
+END_DATA_BLOCK

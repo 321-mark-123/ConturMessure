@@ -1,0 +1,302 @@
+FUNCTION_BLOCK "FB_ChainControl"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      bBtnRed : BOOL; // Gehänge weiterfördern / für Roboterlackierbetrieb sperren (NOK confirm)
+      bBtnGreen : BOOL; // Gehänge weiterfördern / für Roboterlackierbetrieb freigeben (OK confirm / Teach)
+      bKeySwitch : BOOL; // Schlüsselschalter zum Einlernen neuer Typen
+      
+      // Position Sensors / Status
+      bStation1_Occupied : BOOL; // Laufwagen steht in Stopper-1
+      bStation2_Arrival : BOOL; // Laufwagen hat Stopper-1 verlassen -> Ankunft Station 2
+      bStation3_Arrival : BOOL; // Laufwagen an Messtation
+      bStation3_Occupied : BOOL; 
+      bStation4_Arrival : BOOL; // Laufwagen Messung Ok Programmübergabe
+      
+      bIniMessungStart : BOOL; // Trigger Measurement
+      
+      // S7-1200 Interface
+      i_PrgrNr : BOOL; // Bit PrgrNr empfangen (Simplified representation, likely handshake bit)
+      i_PrgrNr_Data : DINT; // The actual program number from S7-1200
+      i_LaufWgNr_Data : DINT; // The actual carriage number from S7-1200
+      
+      // Measurement Inputs (Simulated connection to Sick sensors)
+      i_Meas_X_Right : DINT;
+      i_Meas_X_Left  : DINT;
+      i_Meas_Y_Vertical : DINT;
+
+      // System Tickers/Clocks
+      i_Clock_1Hz : BOOL;
+   END_VAR
+
+   VAR_OUTPUT 
+      bLightRed : BOOL; // Flashing: Deviation; True: Deviation+ActionReq
+      bLightGreen : BOOL; // Flashing: Measuring; True: OK
+      bHornAlarm : BOOL; // Flashing: Deviation; True: New Article
+      
+      bPrgrReadyForRobot : BOOL; // Programmübergabe an Roboter freigeben
+      nPrgrNr_Robot : DINT; // Output to Robot
+      
+      q_PrgrNr_Ack : BOOL; // Handshake to S7-1200
+   END_VAR
+
+   VAR 
+      // State Machines / Internal States
+      step_St2 : INT; 
+      step_St3 : INT;
+      
+      // Flasher helpers
+      bFlash : BOOL;
+      timer_Flash : TON;
+      
+      // Edge detection
+      trig_BtnGreen : R_TRIG;
+      trig_BtnRed : R_TRIG;
+      trig_St1_Occ : R_TRIG;
+      trig_St2_Arr : R_TRIG;
+      trig_St3_Arr : R_TRIG;
+      trig_MeasStart : R_TRIG;
+
+      // Internal storage for search
+      tempIndex : INT;
+      bFound : BOOL;
+      
+      // Timers
+      timer_Teach : TON;
+   END_VAR
+
+BEGIN
+   // =============================================================
+   // Utils
+   // =============================================================
+   // Flash signal generation (approx 1Hz based on cycle or use input clock)
+   #timer_Flash(IN := NOT #timer_Flash.Q, PT := T#500MS);
+   #bFlash := #timer_Flash.Q;
+   
+   // Edges
+   #trig_BtnGreen(CLK := #bBtnGreen);
+   #trig_BtnRed(CLK := #bBtnRed);
+   #trig_St1_Occ(CLK := #bStation1_Occupied); // Using sensor for "Step 1"
+   #trig_St2_Arr(CLK := #bStation2_Arrival);
+   #trig_St3_Arr(CLK := #bStation3_Arrival); 
+   #trig_MeasStart(CLK := #bIniMessungStart);
+
+   // =============================================================
+   // STATION 1: Entry from S7-1200
+   // =============================================================
+   // Step 2: S7-1200 übergibt Programmnummer und Laufwagennummer
+   // Handshake Logic (Primitive)
+   IF #i_PrgrNr THEN 
+       // Copy Data to Station 1 DB
+       "KetteLaufwagenDB".Station1.nArticleNumber := #i_PrgrNr_Data;
+       "KetteLaufwagenDB".Station1.nLaufWgNrNumber := #i_LaufWgNr_Data;
+       
+       // Ack
+       #q_PrgrNr_Ack := TRUE;
+   ELSE
+       #q_PrgrNr_Ack := FALSE;
+   END_IF;
+
+   // Step 3: Shift 1 -> 2 when leaving Station 1 (Simulated by St2 Arrival for simplicity of chain)
+   IF #trig_St2_Arr.Q THEN // Step 3
+       "KetteLaufwagenDB".Station2 := "KetteLaufwagenDB".Station1;
+       // Clear Station 1 (Optional, good for debug)
+       "KetteLaufwagenDB".Station1.nArticleNumber := 0;
+       "KetteLaufwagenDB".Station1.nLaufWgNrNumber := 0;
+       
+       // Reset State2
+       #step_St2 := 0; 
+   END_IF;
+
+   // =============================================================
+   // STATION 2: Search & Validation
+   // =============================================================
+   // Step 4: Search Program Number
+   CASE #step_St2 OF
+       0: // Idle / Start Search
+           IF "KetteLaufwagenDB".Station2.nArticleNumber > 0 THEN
+               #bFound := FALSE;
+               // Search in MaximalkonturDB
+               FOR #tempIndex := 1 TO 999 DO
+                   IF "MaximalkonturDB".Articles[#tempIndex].nArticleNumber = "KetteLaufwagenDB".Station2.nArticleNumber THEN
+                       #bFound := TRUE;
+                       // Load Nominal Data (Optional: copy nom data to carriage for comparison later?)
+                       // For now we just verify existence.
+                       // Also load tolerances if we want them locally
+                       "KetteLaufwagenDB".Station2.nXbreiteRechts := "MaximalkonturDB".Articles[#tempIndex].nXbreiteRechts;
+                       "KetteLaufwagenDB".Station2.nXbreitelinks := "MaximalkonturDB".Articles[#tempIndex].nXbreitelinks;
+                       "KetteLaufwagenDB".Station2.nYlaenge := "MaximalkonturDB".Articles[#tempIndex].nYlaenge;
+                       "KetteLaufwagenDB".Station2.nTolX := "MaximalkonturDB".Articles[#tempIndex].nTolX;
+                       "KetteLaufwagenDB".Station2.nTolY := "MaximalkonturDB".Articles[#tempIndex].nTolY;
+                       
+                       EXIT; 
+                   END_IF;
+               END_FOR;
+               
+               IF #bFound THEN
+                   #step_St2 := 10; // Found, Continue
+               ELSE
+                   #step_St2 := 20; // Not Found, Stop & Inform
+               END_IF;
+           END_IF;
+           
+       10: // 4.1 Found - Ready to pass to St3
+            // Waiting for physical transport... (Handled by conveyor logic outside, we assume flow continues)
+            ;
+            
+       20: // 4.2 Not Found - Operator Action
+           // Set lights handled in Output Signal Section
+           IF #trig_BtnGreen.Q THEN // 4.2.1 Operator confirms
+               "KetteLaufwagenDB".Station2.bIsNewArticle := TRUE;
+               #step_St2 := 10; // Continue
+           END_IF;
+   END_CASE;
+
+   // =============================================================
+   // STATION 3: Measurement
+   // =============================================================
+   // Step 5: Arrival St3
+   IF #trig_St3_Arr.Q THEN
+       "KetteLaufwagenDB".Station3 := "KetteLaufwagenDB".Station2;
+       "KetteLaufwagenDB".Station2.nArticleNumber := 0;
+       "KetteLaufwagenDB".Station2.bIsNewArticle := FALSE;
+       #step_St3 := 0;
+   END_IF;
+   
+   // Step 6: Measurement Logic
+   CASE #step_St3 OF
+       0: // Wait for Measurement Start Trigger
+           IF "KetteLaufwagenDB".Station3.nArticleNumber > 0 AND #trig_MeasStart.Q THEN
+               #step_St3 := 10;
+           END_IF;
+           
+       10: // Measuring (Simulated duration or instant)
+           // 6. Output bLightGreen = flashing (handled below)
+           
+           // Capture Values (In reality this might take time/integration)
+           "KetteLaufwagenDB".Station3.nActXbreiteRechts := #i_Meas_X_Right;
+           "KetteLaufwagenDB".Station3.nActXbreitelinks := #i_Meas_X_Left;
+           "KetteLaufwagenDB".Station3.nActYlaenge := #i_Meas_Y_Vertical;
+           
+           #step_St3 := 20; // Analyze
+           
+       20: // Analyze Data
+           IF "KetteLaufwagenDB".Station3.bIsNewArticle THEN
+               // 6.1 New Article Logic
+               // 6.1.1 Find free slot
+               FOR #tempIndex := 1 TO 999 DO
+                   IF "MaximalkonturDB".Articles[#tempIndex].nArticleNumber = 0 THEN
+                       // 6.1.2 / 6.1.3 Store Data
+                       "MaximalkonturDB".Articles[#tempIndex].nArticleNumber := "KetteLaufwagenDB".Station3.nArticleNumber;
+                       "MaximalkonturDB".Articles[#tempIndex].nXbreiteRechts := "KetteLaufwagenDB".Station3.nActXbreiteRechts;
+                       "MaximalkonturDB".Articles[#tempIndex].nXbreitelinks := "KetteLaufwagenDB".Station3.nActXbreitelinks;
+                       "MaximalkonturDB".Articles[#tempIndex].nYlaenge := "KetteLaufwagenDB".Station3.nActYlaenge;
+                       
+                       // 6.1.4 Reset Flag
+                       "KetteLaufwagenDB".Station3.bIsNewArticle := FALSE;
+                       #step_St3 := 30; // OK
+                       EXIT;
+                   END_IF;
+               END_FOR;
+               
+           ELSE
+               // 6.2 Existing Article Logic
+               // Compare Actual vs Nominal +/- Tolerance
+               // Nominal
+               // Note: We already loaded nominals in St2 into the Carriage Struct for convenience, 
+               // or we could look up again. Using St2 cached data in St3 struct:
+               
+               // Verification Logic (Simplified Abs Tolerance)
+               // Check X Right
+               IF ABS("KetteLaufwagenDB".Station3.nActXbreiteRechts - "KetteLaufwagenDB".Station3.nXbreiteRechts) > "KetteLaufwagenDB".Station3.nTolX OR
+                  ABS("KetteLaufwagenDB".Station3.nActXbreitelinks - "KetteLaufwagenDB".Station3.nXbreitelinks) > "KetteLaufwagenDB".Station3.nTolX OR
+                  ABS("KetteLaufwagenDB".Station3.nActYlaenge - "KetteLaufwagenDB".Station3.nYlaenge) > "KetteLaufwagenDB".Station3.nTolY THEN
+                   
+                   // Deviation detected
+                   #step_St3 := 40; // Error State
+               ELSE
+                   // OK
+                   #step_St3 := 30; // Passthrough
+               END_IF;
+           END_IF;
+           
+       30: // 6.2.4 Contour OK
+           // Copy to Station 4 (Handover)
+           "KetteLaufwagenDB".Station4 := "KetteLaufwagenDB".Station3; 
+           "KetteLaufwagenDB".Station3.nArticleNumber := 0; // Clear St3
+           
+           // Robot Handover Outputs
+           #bPrgrReadyForRobot := TRUE;
+           #nPrgrNr_Robot := "KetteLaufwagenDB".Station4.nArticleNumber;
+           
+           #step_St3 := 99; // Done for this cycle
+           
+       40: // 6.2.3 Deviation / Error Detected
+           // Lights handled in Output section
+           
+           // 5 sec Hold check for Green Button (Correction)
+           #timer_Teach(IN := #bBtnGreen, PT := T#5S);
+           
+           IF #timer_Teach.Q THEN // 6.2.3.1 Operator overwrites/teaches
+               // Update DB with NEW values? Or just accept?
+               // Requirement say "Messung wird durch Bediener korrigiert" -> proceed to OK
+               // Often requires updating the Master DB. Assuming just Accept for flow:
+                #step_St3 := 30; // Go to OK
+           END_IF;
+           
+           IF #trig_BtnRed.Q THEN // 6.2.3.2 Reject
+               #step_St3 := 50; // Reject State
+           END_IF;
+           
+       50: // 6.2.5 Contour NOK
+           // Block Robot
+           #bPrgrReadyForRobot := FALSE;
+           #nPrgrNr_Robot := 999;
+           // Stay here until reset? Or move out? 
+           // Usually move to reject lane. For this FB, we hold state or clear.
+           // Requirement: "Starte Funktionsbaustein für Schrittkette Roboterübergabe" -> Done via outputs
+           
+           // If moved out (Simulated):
+           // "KetteLaufwagenDB".Station3.nArticleNumber := 0;
+           // #step_St3 := 0;
+   END_CASE;
+
+   // =============================================================
+   // OUTPUT SIGNAL MAPPING
+   // =============================================================
+   
+   // Defaults
+   #bLightRed := FALSE;
+   #bLightGreen := FALSE;
+   #bHornAlarm := FALSE;
+
+   // Station 2: New Article / Unknown
+   IF #step_St2 = 20 THEN
+       #bLightRed := TRUE;
+       #bLightGreen := TRUE; // Both True = Operator Check Req (4.2)
+   END_IF;
+
+   // Station 3: Measuring
+   IF #step_St3 = 10 THEN
+       #bLightGreen := #bFlash; // Flashing Green
+   END_IF;
+   
+   // Station 3: Error / Deviation (Step 6.2.3)
+   IF #step_St3 = 40 THEN
+       #bLightRed := #bFlash;
+       #bHornAlarm := TRUE;
+   END_IF;
+   
+   // Station 3: OK (Step 6.2.4) - Pulse or Steady?
+   // "bLightGreen = TRUE"
+   IF #step_St3 = 30 OR #step_St3 = 99 THEN
+       #bLightGreen := TRUE;
+   END_IF;
+   
+   // Station 3: NOK (Step 6.2.5)
+   IF #step_St3 = 50 THEN
+       #bLightRed := #bFlash; // "flasching TRUE"
+       #bHornAlarm := #bFlash; 
+   END_IF;
+
+END_FUNCTION_BLOCK

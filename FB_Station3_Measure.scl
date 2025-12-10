@@ -1,0 +1,231 @@
+FUNCTION_BLOCK "FB_Station3_Measure"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION: 0.2
+   VAR_INPUT
+      bIniMessungStart: BOOL; // Step 5 input
+      bBtnGreen: BOOL;
+      bBtnRed: BOOL;
+      i_Clock_1Hz : BOOL;
+
+      // Actual Measured Values (Inputs from Sensors)
+      nMeas_XRechts: DINT;
+      nMeas_XLinks: DINT;
+      nMeas_YLaenge: DINT;
+      b_Reset : BOOL;
+      b_enable : BOOL;
+   END_VAR
+
+   VAR_OUTPUT
+      bLightRed: BOOL;
+      bLightGreen: BOOL;
+      bHornAlarm: BOOL;
+      bPrgrReadyForRobot: BOOL;
+      nPrgrNr_ToRobot: DINT;
+      bMeasurementDone: BOOL; 
+      bPrgrNrgefunden : BOOL; // Step 7.2.1 Output
+      nFoundIndex_Out : INT; // Debug: Index used/found
+   END_VAR
+
+   VAR_IN_OUT
+      Data_Stn3: "typeCarriageData";
+      Data_Stn4: "typeCarriageData";
+      DB_Master: ARRAY[0..999] OF "typeArticleDefinition";
+   END_VAR
+
+   VAR
+      nState: INT := 0;
+      nSearchIndex: INT;
+      nFoundIndex: INT;
+      ton_BtnGreen: TON;
+      sStateDesc : STRING; // Debug: Current State Description
+   END_VAR
+
+   CONST
+      STATE_WAIT_DATA := 0;
+      STATE_WAIT_MEAS_START := 10;
+      STATE_MEASURING := 20;
+      STATE_EVALUATE := 30;
+      STATE_SEARCH_EXISTING := 35; // Step 7.2.1
+      STATE_CHECK_TOLERANCE := 36; // Step 7.2.2
+      STATE_ERROR := 40;
+      STATE_DONE_OK := 50;
+      STATE_DONE_NOK := 60;
+   END_CONST
+
+BEGIN
+   // =============================================================
+   // STATE MACHINE STATION 3
+   // =============================================================
+   IF #b_Reset THEN
+       #nState := 0;
+       #bLightRed := FALSE;
+       #bLightGreen := FALSE;
+       #bHornAlarm := FALSE;
+       #bMeasurementDone := FALSE;
+       #bPrgrReadyForRobot := FALSE;
+       #nFoundIndex_Out := 0;
+       #sStateDesc := 'RESET';
+       
+   ELSIF #b_enable THEN
+       CASE #nState OF
+      #STATE_WAIT_DATA:
+         IF #Data_Stn3.bDataValid THEN
+             #bMeasurementDone := FALSE;
+             #bPrgrReadyForRobot := FALSE;
+             #bPrgrNrgefunden := FALSE;
+             #nState := #STATE_WAIT_MEAS_START; 
+             #sStateDesc := 'DATA_RECEIVED_WAIT_START';
+         ELSE
+             #bMeasurementDone := TRUE; 
+             #sStateDesc := 'IDLE_EMPTY';
+         END_IF;
+
+      #STATE_WAIT_MEAS_START:
+         IF #bIniMessungStart THEN // Step 6 start
+             #nState := #STATE_MEASURING;
+             #sStateDesc := 'MEASURING_STARTED';
+         END_IF;
+
+      #STATE_MEASURING: // Step 7
+         // Flash Green
+         IF #i_Clock_1Hz THEN #bLightGreen := TRUE; ELSE #bLightGreen := FALSE; END_IF;
+
+         // Mock Measurement
+         #Data_Stn3.nActXbreiteRechts := #nMeas_XRechts;
+         #Data_Stn3.nActXbreitelinks := #nMeas_XLinks;
+         #Data_Stn3.nActYlaenge := #nMeas_YLaenge;
+         
+         #nState := #STATE_EVALUATE;
+         #sStateDesc := 'EVALUATING_RESULTS';
+
+      #STATE_EVALUATE:
+         #bLightGreen := FALSE;
+
+         IF #Data_Stn3.bIsNewArticle THEN // Step 7.1
+             // Step 7.1.1 Find Free Slot
+             FOR #nSearchIndex := 1 TO 999 DO
+                 IF #DB_Master[#nSearchIndex].nProgrNumber = 0 THEN // Found Empty by ID
+                     #nFoundIndex := #nSearchIndex;
+                     #nFoundIndex_Out := #nSearchIndex;
+                     EXIT;
+                 END_IF;
+             END_FOR;
+
+             // Step 7.1.3 Save
+             #DB_Master[#nFoundIndex].nXbreiteRechts := #Data_Stn3.nActXbreiteRechts;
+             #DB_Master[#nFoundIndex].nXbreitelinks := #Data_Stn3.nActXbreitelinks;
+             #DB_Master[#nFoundIndex].nYlaenge := #Data_Stn3.nActYlaenge;
+             
+             // Step 7.1.4
+             #Data_Stn3.bIsNewArticle := FALSE; 
+             #Data_Stn3.nProgrNumber := #nFoundIndex; 
+
+             #nState := #STATE_DONE_OK;
+             #sStateDesc := 'NEW_ARTICLE_SAVED';
+
+         ELSE // Step 7.2 Existing Article
+             #nState := #STATE_SEARCH_EXISTING;
+         END_IF;
+         
+      #STATE_SEARCH_EXISTING: // Step 7.2.1
+         // Datensatz mit Programmnummer suchen
+         #bPrgrNrgefunden := FALSE;
+         
+         FOR #nSearchIndex := 1 TO 999 DO
+             IF #DB_Master[#nSearchIndex].nProgrNumber = #Data_Stn3.nProgrNumber THEN
+                 #bPrgrNrgefunden := TRUE;
+                 #nFoundIndex := #nSearchIndex;
+                 #nFoundIndex_Out := #nSearchIndex;
+                 EXIT;
+             END_IF;
+         END_FOR;
+
+         IF #bPrgrNrgefunden THEN
+             #nState := #STATE_CHECK_TOLERANCE;
+             #sStateDesc := 'CHECKING_TOLERANCES';
+         ELSE
+             // Not found logic
+             IF #i_Clock_1Hz THEN 
+                 #bLightRed := TRUE; 
+                 #bLightGreen := TRUE; 
+             ELSE 
+                 #bLightRed := FALSE; 
+                 #bLightGreen := FALSE; 
+             END_IF;
+             #bHornAlarm := TRUE;
+             
+             #nState := #STATE_ERROR; 
+             #sStateDesc := 'ERROR_PRGR_NOT_FOUND';
+         END_IF;
+             
+      #STATE_CHECK_TOLERANCE: // Step 7.2.2
+             // Compare with Tolerances (Using #nFoundIndex from Step 7.2.1)
+             // Note: #Data_Stn3.nArticleNumber is the ID, #nFoundIndex is the DB Index.
+             IF ABS(#Data_Stn3.nActXbreiteRechts - #DB_Master[#nFoundIndex].nXbreiteRechts)
+                > #DB_Master[#nFoundIndex].nTolX THEN
+                #nState := #STATE_ERROR;
+             ELSIF ABS(#Data_Stn3.nActXbreitelinks - #DB_Master[#nFoundIndex].nXbreitelinks)
+                > #DB_Master[#nFoundIndex].nTolX THEN
+                 #nState := #STATE_ERROR;
+             ELSIF ABS(#Data_Stn3.nActYlaenge - #DB_Master[#nFoundIndex].nYlaenge)
+                > #DB_Master[#nFoundIndex].nTolY THEN
+                 #nState := #STATE_ERROR;
+             ELSE
+                 #nState := #STATE_DONE_OK;
+                 #sStateDesc := 'TOLERANCE_OK';
+             END_IF;
+
+      #STATE_ERROR: // Step 7.2.3
+         // Flash Red, Horn TRUE
+         IF #i_Clock_1Hz THEN #bLightRed := TRUE; ELSE #bLightRed := FALSE; END_IF; 
+         #bHornAlarm := TRUE; 
+         
+         // 7.2.3.1 BtnGreen 5sec -> Accept
+         #ton_BtnGreen(IN := #bBtnGreen, PT := T#5s);
+         IF #ton_BtnGreen.Q THEN
+             #nState := #STATE_DONE_OK;
+         END_IF;
+
+         // 7.2.3.2 BtnRed -> Reject
+         IF #bBtnRed THEN
+             #nState := #STATE_DONE_NOK;
+             #sStateDesc := 'REJECTED_BY_OPERATOR';
+         END_IF;
+
+      #STATE_DONE_OK: // Step 7.2.4
+         #bLightGreen := TRUE;
+         #bLightRed := FALSE;
+         #bHornAlarm := FALSE;
+         #bPrgrReadyForRobot := TRUE;
+         #nPrgrNr_ToRobot := #Data_Stn3.nProgrNumber;
+         
+         // Move to Stn 4
+         #Data_Stn4 := #Data_Stn3;
+         #Data_Stn3.bDataValid := FALSE;
+         #bMeasurementDone := TRUE; 
+
+         #nState := #STATE_WAIT_DATA;
+
+      #STATE_DONE_NOK: // Step 7.2.5
+         #bLightGreen := FALSE;
+         // Flash Red True (implied flashing or steady?) Prompt says "flasching TRUE"
+         IF #i_Clock_1Hz THEN #bLightRed := TRUE; ELSE #bLightRed := FALSE; END_IF;
+         
+         // "bHornAlarm = flashing TRUE"
+         IF #i_Clock_1Hz THEN #bHornAlarm := TRUE; ELSE #bHornAlarm := FALSE; END_IF;
+
+         #bPrgrReadyForRobot := FALSE;
+         #nPrgrNr_ToRobot := 999;
+
+         // Move to Stn 4
+         #Data_Stn4 := #Data_Stn3;
+         #Data_Stn3.bDataValid := FALSE;
+         #bMeasurementDone := TRUE;
+
+         #nState := #STATE_WAIT_DATA;
+
+         #nState := #STATE_WAIT_DATA;
+
+      END_CASE;
+   END_IF;
+END_FUNCTION_BLOCK
